@@ -1,0 +1,12 @@
+name: Quests
+version: '${version}'
+main: zip.sodium.quests.Quests
+api-version: 1.19
+commands:
+  questxp:
+
+permissions:
+  zip.sodium.quests.questxp.add:
+
+  zip.sodium.quest.questxp.remove:
+
