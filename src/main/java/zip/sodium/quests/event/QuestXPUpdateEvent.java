@@ -9,13 +9,17 @@ import org.jetbrains.annotations.NotNull;
 
 public class QuestXPUpdateEvent extends Event implements Cancellable {
     public static final HandlerList HANDLERS_LIST = new HandlerList();
+
     private boolean cancelled = false;
 
-    private final double xpDiff;
+    private final double oldXP;
+    private final double newXP;
+
     private final OfflinePlayer player;
 
-    public QuestXPUpdateEvent(OfflinePlayer player, double xpDiff){
-        this.xpDiff = xpDiff;
+    public QuestXPUpdateEvent(OfflinePlayer player, double oldXP, double newXP){
+        this.oldXP = oldXP;
+        this.newXP = newXP;
         this.player = player;
     }
 
@@ -23,8 +27,12 @@ public class QuestXPUpdateEvent extends Event implements Cancellable {
         return player;
     }
 
-    public double getXpDifference() {
-        return xpDiff;
+    public double getOldXP() {
+        return oldXP;
+    }
+
+    public double getNewXP() {
+        return newXP;
     }
 
     @NotNull

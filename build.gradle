@@ -19,7 +19,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.mongodb:mongodb-driver-reactivestreams:4.10.0'
+    implementation 'org.mongodb:mongodb-driver-sync:4.10.0'
     implementation 'org.jetbrains:annotations:24.0.0'
     compileOnly "org.spigotmc:spigot-api:1.19.4-R0.1-SNAPSHOT"
 }

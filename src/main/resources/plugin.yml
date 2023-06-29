@@ -7,6 +7,6 @@ commands:
 
 permissions:
   zip.sodium.quests.questxp.add:
-
+    default: op
   zip.sodium.quest.questxp.remove:
-
+    default: op

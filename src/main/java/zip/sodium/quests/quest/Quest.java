@@ -1,40 +1,25 @@
 package zip.sodium.quests.quest;
 
 import com.mongodb.client.model.Filters;
-import com.mongodb.client.model.Updates;
-import com.mongodb.client.result.DeleteResult;
-import com.mongodb.client.result.InsertOneResult;
-import com.mongodb.client.result.UpdateResult;
 import org.bson.Document;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
-import org.reactivestreams.Publisher;
-import org.reactivestreams.Subscriber;
-import org.reactivestreams.Subscription;
-import zip.sodium.quests.EmptySubscriber;
 import zip.sodium.quests.Quests;
 import zip.sodium.quests.event.QuestAssignEvent;
-import zip.sodium.quests.event.QuestXPUpdateEvent;
+
+import java.util.concurrent.CompletableFuture;
 
 public abstract class Quest {
     private final String id;
 
+    private double progress = 0;
+
     private final boolean cacheable;
 
-    private int cacheCount = 0;
-    private final int maximumCacheCount;
-
-    public Quest(String id, boolean cacheable, int maximumCacheCount) {
+    public Quest(String id, boolean cacheable) {
         this.id = id;
         this.cacheable = cacheable;
-        this.maximumCacheCount = maximumCacheCount;
-    }
-
-    public Quest(String id) {
-        this.id = id;
-        this.cacheable = false;
-        this.maximumCacheCount = 0;
     }
 
     public String getId() {
@@ -45,102 +30,51 @@ public abstract class Quest {
         return cacheable;
     }
 
-    public int getMaximumCacheCount() {
-        return maximumCacheCount;
-    }
-
-    public Publisher<InsertOneResult> assignToPlayer(final OfflinePlayer player) {
+    public CompletableFuture<Boolean> assignToPlayer(final OfflinePlayer player) {
         final QuestAssignEvent event = new QuestAssignEvent(player, this);
         Bukkit.getPluginManager().callEvent(event);
 
         if (event.isCancelled())
             return null;
 
-        final Document document = new Document();
-        document.put("uuid", player.getUniqueId().toString());
-        document.put("quest_id", getId());
-        document.put("progress", 0.0d);
-
-        return Quests.getPlayerDataCollection().insertOne(document);
+        return Quests.getDatabaseHelper().assignQuestToPlayer(player, this);
     }
 
-    public Publisher<Document> getData(final Player player) {
-        return Quests.getQuestProgressCollection().find(Filters.and(Filters.eq("uuid", player.getUniqueId().toString()), Filters.eq("quest_id", id)));
-    }
-
-    public static Publisher<Document> addXP(final OfflinePlayer player, double xp) {
-        final QuestXPUpdateEvent event = new QuestXPUpdateEvent(player, xp);
-        Bukkit.getPluginManager().callEvent(event);
-
-        if (event.isCancelled())
-            return null;
-
-        return Quests.getPlayerDataCollection().findOneAndUpdate(Filters.eq("uuid", player.getUniqueId().toString()), Updates.inc("xp", xp));
-    }
-
-    public static Publisher<Document> getPlayerData(final OfflinePlayer player) {
-        return Quests.getPlayerDataCollection().find(Filters.eq("uuid", player.getUniqueId().toString()));
+    public CompletableFuture<Document> getData(final Player player) {
+        return Quests.getDatabaseHelper().getQuestData(player, getId());
     }
 
     public final void tick(final Player player) {
+        if (cacheable) {
+            cacheableTick(player);
+            return;
+        }
+
         if (!didProgress(player))
             return;
 
-        getData(player).subscribe(new Subscriber<>() {
-            @Override
-            public void onSubscribe(Subscription s) {
-                s.request(1);
-            }
+        Quests.getDatabaseHelper().getQuestProgress(player, getId()).thenAccept(progress -> {
+            progress += progressed(player);
+            if (progress > 100)
+                progress = 100d;
 
-            @Override
-            public void onNext(final Document document) {
-                double progress = document.getDouble("progress");
-
-                progress += progressed(player);
-                if (progress > 100)
-                    progress = 100;
-
-                final double finalProgress = progress;
-                if (cacheCount < maximumCacheCount) {
-                    cacheCount++;
-                    return;
-                }
-
-                cacheCount = 0;
-
-                Quests.getQuestProgressCollection().updateOne(Filters.and(Filters.eq("uuid", player.getUniqueId().toString()), Filters.eq("quest_id", id)), Updates.set("progress", progress)).subscribe(new Subscriber<>() {
-                    @Override
-                    public void onSubscribe(Subscription s) {
-                        s.request(1);
-                    }
-
-                    @Override
-                    public void onNext(final UpdateResult updateResult) {}
-
-                    @Override
-                    public void onError(Throwable t) {}
-
-                    @Override
-                    public void onComplete() {
-                        if (finalProgress >= 100) {
-                            Quests.getQuestProgressCollection().deleteOne(Filters.and(Filters.eq("uuid", player.getUniqueId().toString()), Filters.eq("quest_id", id))).subscribe(new EmptySubscriber<>());
-
-                            completed(player);
-                        }
-                    }
-                });
-            }
-
-            @Override
-            public void onError(Throwable t) {
-
-            }
-
-            @Override
-            public void onComplete() {
-
-            }
+            Quests.getDatabaseHelper().setQuestProgress(player, getId(), progress);
         });
+    }
+
+    private void cacheableTick(final Player player) {
+        if (!didProgress(player))
+            return;
+
+        progress += progressed(player);
+        if (progress >= 100)
+            completed(player);
+    }
+
+    public void save(final Player player) {
+        if (!cacheable) return;
+
+        Quests.getDatabaseHelper().setQuestProgress(player, getId(), progress);
     }
 
     /**
@@ -159,5 +93,5 @@ public abstract class Quest {
     /**
      * Triggered when quest is completed
      */
-    protected abstract void completed(Player player);
+    protected abstract void completed(final Player player);
 }

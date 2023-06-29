@@ -1,29 +1,31 @@
 package zip.sodium.quests;
 
-import com.mongodb.client.model.Filters;
-import com.mongodb.client.result.InsertOneResult;
-import com.mongodb.reactivestreams.client.MongoClient;
-import com.mongodb.reactivestreams.client.MongoClients;
-import com.mongodb.reactivestreams.client.MongoCollection;
-import com.mongodb.reactivestreams.client.MongoDatabase;
-import org.bson.Document;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoDatabase;
 import org.bukkit.Bukkit;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
-import org.reactivestreams.Subscriber;
-import org.reactivestreams.Subscription;
-import zip.sodium.quests.command.QuestXPCommand;
+import zip.sodium.quests.command.QuestXP;
+import zip.sodium.quests.db.DataHelper;
+import zip.sodium.quests.db.DatabaseHelper;
 import zip.sodium.quests.quest.Quest;
-import zip.sodium.quests.quest.QuestRegistery;
-import zip.sodium.quests.tabcompleter.QuestXPTabCompleter;
+
+import java.util.Objects;
 
 public class Quests extends JavaPlugin implements Listener {
     private MongoClient conn;
-    private static MongoDatabase database;
+
+    private static DatabaseHelper DATABASE_HELPER;
+
+    public static DatabaseHelper getDatabaseHelper() {
+        return DATABASE_HELPER;
+    }
 
     @Override
     public void onEnable() {
@@ -38,83 +40,55 @@ public class Quests extends JavaPlugin implements Listener {
         }
 
         conn = MongoClients.create(connectionString);
-        database = conn.getDatabase("QuestData");
+        final MongoDatabase database = conn.getDatabase("QuestData");
 
-        getCommand("questxp").setExecutor(new QuestXPCommand());
-        getCommand("questxp").setTabCompleter(new QuestXPTabCompleter());
+        DATABASE_HELPER = new DataHelper(this, database);
+
+        final PluginCommand command = Objects.requireNonNull(getCommand("questxp"), "\"questxp\" command does not exist in plugin.yml!");
+        new QuestXP(command);
 
         Bukkit.getPluginManager().registerEvents(this, this);
 
+        // Runs every half a second
         new BukkitRunnable() {
             @Override
             public void run() {
                 for (Player player : Bukkit.getOnlinePlayers()) {
-                    getQuestProgressCollection().find(Filters.eq("uuid", player.getUniqueId().toString())).subscribe(new Subscriber<>() {
-                        @Override
-                        public void onSubscribe(Subscription s) {
-                            s.request(1);
-                        }
-
-                        @Override
-                        public void onNext(final Document document) {
-                            QuestRegistery.getQuest(document.getString("quest_id")).tick(player);
-                        }
-
-                        @Override
-                        public void onError(Throwable t) {
-
-                        }
-
-                        @Override
-                        public void onComplete() {
-
-                        }
+                    DATABASE_HELPER.getQuestsAssignedToPlayer(player).thenAccept((quests) -> {
+                        for (Quest quest : quests)
+                            quest.tick(player);
                     });
                 }
             }
         }.runTaskTimer(this, 0L, 10L);
+
+        // Runs every minute
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                for (Player player : Bukkit.getOnlinePlayers()) {
+                    DATABASE_HELPER.getQuestsAssignedToPlayer(player).thenAccept((quests) -> {
+                        for (Quest quest : quests) {
+                            if (!quest.isCacheable())
+                                continue;
+
+                            quest.save(player);
+                        }
+                    });
+                }
+            }
+        }.runTaskTimer(this, 0L, 1200L);
     }
 
     @EventHandler
     public void onJoin(final PlayerJoinEvent e) {
         final Player player = e.getPlayer();
 
-        getPlayerDataCollection().countDocuments(Filters.eq("uuid", player.getUniqueId().toString())).subscribe(new Subscriber<>() {
-            @Override
-            public void onSubscribe(Subscription s) {
-                s.request(1);
-            }
+        DATABASE_HELPER.playerHasXPAccount(player).thenAccept((success) -> {
+            if (!success) return;
 
-            @Override
-            public void onNext(Long aLong) {
-                if (aLong != 0)
-                    return;
-
-                final Document document = new Document();
-                document.put("uuid", player.getUniqueId().toString());
-                document.put("xp", 0.0d);
-
-                getPlayerDataCollection().insertOne(document).subscribe(new EmptySubscriber<>());
-            }
-
-            @Override
-            public void onError(Throwable t) {
-
-            }
-
-            @Override
-            public void onComplete() {
-
-            }
+            DATABASE_HELPER.createXPAccount(player);
         });
-    }
-
-    public static MongoCollection<Document> getQuestProgressCollection() {
-        return database.getCollection("questProgress");
-    }
-
-    public static MongoCollection<Document> getPlayerDataCollection() {
-        return database.getCollection("playerData");
     }
 
     @Override
