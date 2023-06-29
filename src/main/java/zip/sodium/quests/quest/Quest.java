@@ -1,6 +1,5 @@
 package zip.sodium.quests.quest;
 
-import com.mongodb.client.model.Filters;
 import org.bson.Document;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
@@ -54,7 +53,12 @@ public abstract class Quest {
             return;
 
         Quests.getDatabaseHelper().getQuestProgress(player, getId()).thenAccept(progress -> {
-            progress += progressed(player);
+            final double delta = progressed(player);
+
+            if (delta == 0d)
+                return;
+
+            progress += delta;
             if (progress > 100)
                 progress = 100d;
 
@@ -66,9 +70,17 @@ public abstract class Quest {
         if (!didProgress(player))
             return;
 
-        progress += progressed(player);
-        if (progress >= 100)
+        final double delta = progressed(player);
+
+        if (delta == 0d)
+            return;
+
+        progress += delta;
+        if (progress >= 100) {
             completed(player);
+
+            progress = 100;
+        }
     }
 
     public void save(final Player player) {
@@ -85,6 +97,8 @@ public abstract class Quest {
 
     /**
      * Triggered every 10 ticks (half a second) for every player that has the quest if Quest#didProgress was true.
+     * Saves to database every minute if quest is cacheable.
+     * Or else, saves to database every 10 ticks.
      * @return The value to add to the progress (0, 100)
      * @see Quest#didProgress
      */
