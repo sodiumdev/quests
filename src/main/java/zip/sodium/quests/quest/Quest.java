@@ -21,6 +21,11 @@ public abstract class Quest {
         this.cacheable = cacheable;
     }
 
+    public Quest(String id) {
+        this.id = id;
+        this.cacheable = false;
+    }
+
     public String getId() {
         return id;
     }

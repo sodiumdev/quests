@@ -146,16 +146,6 @@ public class DataHelper implements DatabaseHelper {
     }
 
     @Override
-    public CompletableFuture<Boolean> setQuestData(OfflinePlayer player, String questId, Document update) {
-        return CompletableFuture.supplyAsync(() -> getQuestProgressCollection().replaceOne(
-                Filters.and(
-                        Filters.eq("uuid", player.getUniqueId().toString()),
-                        Filters.eq("quest_id", questId)
-                ), update
-        ).wasAcknowledged());
-    }
-
-    @Override
     public CompletableFuture<Double> getPlayerXP(OfflinePlayer player) {
         return CompletableFuture.supplyAsync(() -> Objects.requireNonNull(
                 getPlayerDataCollection()

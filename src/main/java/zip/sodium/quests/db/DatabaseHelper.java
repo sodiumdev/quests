@@ -16,6 +16,5 @@ public interface DatabaseHelper {
     CompletableFuture<Document> getQuestData(final OfflinePlayer player, final String questId);
     CompletableFuture<Double> getQuestProgress(final OfflinePlayer player, final String questId);
     CompletableFuture<Boolean> setQuestProgress(final OfflinePlayer player, final String questId, final double progress);
-    CompletableFuture<Boolean> setQuestData(final OfflinePlayer player, final String questId, final Document data);
     CompletableFuture<Double> getPlayerXP(final OfflinePlayer player);
 }
